@@ -1,0 +1,418 @@
+﻿@page "/ventas"
+@rendermode InteractiveServer
+@inject IVentaRepositorio _repositorioVentas
+@inject IMedicamentoRepositorio _repositorioMedicamentos
+@inject NavigationManager _navegacion
+@inject IJSRuntime JSRuntime
+
+<h3>Gestión de Ventas</h3>
+
+<div class="mb-3">
+    <button class="btn btn-primary" @onclick="MostrarModalAgregar">Nueva Venta</button>
+    <div class="float-end">
+        <label class="me-2">Filtrar por fecha:</label>
+        <input type="date" @bind="_fechaInicio" class="form-control d-inline-block w-auto" />
+        <span class="mx-2">a</span>
+        <input type="date" @bind="_fechaFin" class="form-control d-inline-block w-auto" />
+        <button class="btn btn-sm btn-info ms-2" @onclick="AplicarFiltroFecha">Aplicar</button>
+        <button class="btn btn-sm btn-secondary ms-2" @onclick="LimpiarFiltroFecha">Limpiar</button>
+    </div>
+</div>
+
+@if (_ventas == null)
+{
+    <p>Cargando ventas...</p>
+}
+else
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Fecha</th>
+                <th>Medicamento</th>
+                <th>Cantidad</th>
+                <th>Total</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var venta in _ventas)
+            {
+                <tr>
+                    <td>@venta.ID_Venta</td>
+                    <td>@venta.Fecha_venta.ToString("dd/MM/yyyy HH:mm")</td>
+                    <td>@venta.Medicamento?.Nombre</td>
+                    <td>@venta.Cantidad_vendida</td>
+                    <td>@venta.Total_venta.ToString("C")</td>
+                    <td>
+                        <button class="btn btn-sm btn-info" @onclick="() => MostrarModalEditar(venta.ID_Venta)">Editar</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => EliminarVenta(venta.ID_Venta)">Eliminar</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<!-- Modal para agregar/editar ventas -->
+@if (_mostrarModal)
+{
+    <div class="modal" style="display:block; background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(_ventaActual.ID_Venta == 0 ? "Nueva" : "Editar") Venta</h5>
+                    <button type="button" class="btn-close" @onclick="CerrarModal"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="@_ventaActual" OnValidSubmit="@(_ventaActual.ID_Venta == 0 ? GuardarVenta : EditarVenta)">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group mb-3">
+                                    <label>Fecha de Venta:</label>
+                                    <InputDate class="form-control" @bind-Value="_ventaActual.Fecha_venta" />
+                                    <ValidationMessage For="@(() => _ventaActual.Fecha_venta)" />
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group mb-3">
+                                    <label>Medicamento:</label>
+                                    <InputSelect class="form-control"
+                                                 @bind-Value="_ventaActual.ID_Medicamento"
+                                                 @onchange="OnMedicamentoSeleccionado">
+                                        <option value="">Seleccione un medicamento</option>
+                                        @foreach (var medicamento in _medicamentos)
+                                        {
+                                            <option value="@medicamento.ID_Medicamento">@medicamento.Nombre (@medicamento.Stock_actual disponibles)</option>
+                                        }
+                                    </InputSelect>
+
+
+                                    <ValidationMessage For="@(() => _ventaActual.ID_Medicamento)" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group mb-3">
+                                    <label>Cantidad:</label>
+                                    <InputNumber class="form-control"
+                                                 @bind-Value="_ventaActual.Cantidad_vendida"
+                                                 @oninput="ActualizarTotal" />
+
+
+                                    <ValidationMessage For="@(() => _ventaActual.Cantidad_vendida)" />
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group mb-3">
+                                    <label>Total:</label>
+                                    <div class="form-control" readonly>
+                                        @_ventaActual.Total_venta.ToString("C")
+                                    </div>
+
+                                    <ValidationMessage For="@(() => _ventaActual.Total_venta)" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label>ID Cliente (opcional):</label>
+                            <InputNumber class="form-control" @bind-Value="_ventaActual.ID_Cliente" />
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="submit" class="btn btn-primary">Guardar</button>
+                            <button type="button" class="btn btn-secondary" @onclick="CerrarModal">Cancelar</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Venta> _ventas = new();
+    private List<Medicamento> _medicamentos = new();
+    private Venta _ventaActual = new();
+    private bool _mostrarModal = false;
+    private DateTime _fechaInicio = DateTime.Today.AddDays(-7);
+    private DateTime _fechaFin = DateTime.Today;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarDatos();
+    }
+
+    private async Task CargarDatos()
+    {
+        _medicamentos = await _repositorioMedicamentos.ObtenerMedicamentosAsync();
+        await AplicarFiltroFecha();
+    }
+
+    private async Task AplicarFiltroFecha()
+    {
+        _ventas = await _repositorioVentas.ObtenerRangoFechaAsync(_fechaInicio, _fechaFin.AddDays(1));
+    }
+
+    private async Task LimpiarFiltroFecha()
+    {
+        _fechaInicio = DateTime.MinValue;
+        _fechaFin = DateTime.MaxValue;
+        _ventas = await _repositorioVentas.ObtenerVentasAsync();
+    }
+
+    private void MostrarModalAgregar()
+    {
+        _ventaActual = new Venta { Fecha_venta = DateTime.Now };
+        _mostrarModal = true;
+    }
+
+    private async Task MostrarModalEditar(int id)
+    {
+        try
+        {
+            // Obtener la venta original
+            var ventaOriginal = await _repositorioVentas.ObtenerVentaPorIdAsync(id);
+            if (ventaOriginal == null)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Venta no encontrada.");
+                return;
+            }
+
+            // Crear una COPIA independiente para el formulario
+            // Esto evita que las modificaciones del binding afecten la comparación
+            _ventaActual = new Venta
+            {
+                ID_Venta = ventaOriginal.ID_Venta,
+                ID_Medicamento = ventaOriginal.ID_Medicamento,
+                Cantidad_vendida = ventaOriginal.Cantidad_vendida,
+                Fecha_venta = ventaOriginal.Fecha_venta,
+                ID_Cliente = ventaOriginal.ID_Cliente,
+                Total_venta = ventaOriginal.Total_venta
+            };
+
+           /* // Debug: Confirmar que se cargaron los datos correctamente
+            await JSRuntime.InvokeVoidAsync("console.log", $"Modal editar cargado:");
+            await JSRuntime.InvokeVoidAsync("console.log", $"  ID: {_ventaActual.ID_Venta}");
+            await JSRuntime.InvokeVoidAsync("console.log", $"  Medicamento: {_ventaActual.ID_Medicamento}");
+            await JSRuntime.InvokeVoidAsync("console.log", $"  Cantidad: {_ventaActual.Cantidad_vendida}");
+            await JSRuntime.InvokeVoidAsync("console.log", $"  Total: {_ventaActual.Total_venta}"); */
+
+            _mostrarModal = true;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Error al cargar venta para editar: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error al cargar venta: {ex.Message}");
+        }
+    }
+
+    private void CerrarModal()
+    {
+        _mostrarModal = false;
+    }
+
+    private async Task GuardarVenta()
+    {
+        var medicamento = await _repositorioMedicamentos.ObtenerMedicamentoPorIdAsync(_ventaActual.ID_Medicamento);
+        if (medicamento == null)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Medicamento no válido.");
+            return;
+        }
+
+        if (_ventaActual.Cantidad_vendida > medicamento.Stock_actual)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "No hay suficiente stock disponible.");
+            return;
+        }
+
+        _ventaActual.Total_venta = medicamento.Precio_unitario * _ventaActual.Cantidad_vendida;
+        medicamento.Stock_actual -= _ventaActual.Cantidad_vendida;
+        await _repositorioMedicamentos.ActualizarMedicamentoAsync(medicamento);
+        await _repositorioVentas.AgregarVentaAsync(_ventaActual);
+
+        _mostrarModal = false;
+        await CargarDatos();
+    }
+
+    private async Task EditarVenta()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("console.log", $"=== INICIO EDITAR VENTA ID: {_ventaActual.ID_Venta} ===");
+
+            // CRÍTICO: Obtener la venta original DIRECTAMENTE de la base de datos
+            // NO usar _ventaActual porque ya puede haber sido modificado por el binding del formulario
+            var ventaOriginal = await _repositorioVentas.ObtenerVentaPorIdAsync(_ventaActual.ID_Venta);
+            if (ventaOriginal == null)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Venta no encontrada.");
+                return;
+            }
+
+            // Crear una copia de los datos nuevos para evitar referencias
+            var ventaNueva = new Venta
+            {
+                ID_Venta = _ventaActual.ID_Venta,
+                ID_Medicamento = _ventaActual.ID_Medicamento,
+                Cantidad_vendida = _ventaActual.Cantidad_vendida,
+                Fecha_venta = _ventaActual.Fecha_venta,
+                ID_Cliente = _ventaActual.ID_Cliente,
+                Total_venta = _ventaActual.Total_venta
+            };
+
+            // Debug: Mostrar valores EXACTOS
+            await JSRuntime.InvokeVoidAsync("console.log", $"COMPARACIÓN DETALLADA:");
+            await JSRuntime.InvokeVoidAsync("console.log", $"Original - Med ID: {ventaOriginal.ID_Medicamento}, Cantidad: {ventaOriginal.Cantidad_vendida}");
+            await JSRuntime.InvokeVoidAsync("console.log", $"Nueva    - Med ID: {ventaNueva.ID_Medicamento}, Cantidad: {ventaNueva.Cantidad_vendida}");
+
+            // Comparación exacta
+            bool cambioMedicamento = ventaNueva.ID_Medicamento != ventaOriginal.ID_Medicamento;
+            bool cambioCantidad = ventaNueva.Cantidad_vendida != ventaOriginal.Cantidad_vendida;
+
+            await JSRuntime.InvokeVoidAsync("console.log", $"¿Cambió medicamento? {cambioMedicamento} ({ventaOriginal.ID_Medicamento} → {ventaNueva.ID_Medicamento})");
+            await JSRuntime.InvokeVoidAsync("console.log", $"¿Cambió cantidad? {cambioCantidad} ({ventaOriginal.Cantidad_vendida} → {ventaNueva.Cantidad_vendida})");
+
+            // Si no hay cambios en stock, solo actualizar datos de la venta
+            if (!cambioMedicamento && !cambioCantidad)
+            {
+                await JSRuntime.InvokeVoidAsync("console.log", "Sin cambios en stock - solo actualizando fecha/cliente");
+
+                // Mantener el total original si no cambió nada relevante
+                ventaNueva.Total_venta = ventaOriginal.Total_venta;
+
+                await _repositorioVentas.ActualizarVentaAsync(ventaNueva);
+                await JSRuntime.InvokeVoidAsync("alert", "Venta actualizada (sin cambios en inventario)");
+
+                _mostrarModal = false;
+                await CargarDatos();
+                return;
+            }
+
+            await JSRuntime.InvokeVoidAsync("console.log", "HAY CAMBIOS - Procesando ajuste de inventario...");
+
+            // PASO 1: Revertir stock original
+            var medicamentoOriginal = await _repositorioMedicamentos.ObtenerMedicamentoPorIdAsync(ventaOriginal.ID_Medicamento);
+            if (medicamentoOriginal != null)
+            {
+                await JSRuntime.InvokeVoidAsync("console.log", $"Revirtiendo {ventaOriginal.Cantidad_vendida} unidades a {medicamentoOriginal.Nombre}");
+                await JSRuntime.InvokeVoidAsync("console.log", $"Stock antes de revertir: {medicamentoOriginal.Stock_actual}");
+
+                medicamentoOriginal.Stock_actual += ventaOriginal.Cantidad_vendida;
+
+                await JSRuntime.InvokeVoidAsync("console.log", $"Stock después de revertir: {medicamentoOriginal.Stock_actual}");
+                await _repositorioMedicamentos.ActualizarMedicamentoAsync(medicamentoOriginal);
+            }
+
+            // PASO 2: Validar y aplicar nueva venta
+            var medicamentoNuevo = await _repositorioMedicamentos.ObtenerMedicamentoPorIdAsync(ventaNueva.ID_Medicamento);
+            if (medicamentoNuevo == null)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Medicamento seleccionado no válido.");
+                return;
+            }
+
+            await JSRuntime.InvokeVoidAsync("console.log", $"Aplicando {ventaNueva.Cantidad_vendida} unidades a {medicamentoNuevo.Nombre}");
+            await JSRuntime.InvokeVoidAsync("console.log", $"Stock disponible: {medicamentoNuevo.Stock_actual}");
+
+            // Verificar stock disponible
+            if (ventaNueva.Cantidad_vendida > medicamentoNuevo.Stock_actual)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Stock insuficiente. Disponible: {medicamentoNuevo.Stock_actual}, Necesario: {ventaNueva.Cantidad_vendida}");
+
+                // Revertir el cambio al stock original si los medicamentos son diferentes
+                if (medicamentoOriginal != null && medicamentoOriginal.ID_Medicamento != medicamentoNuevo.ID_Medicamento)
+                {
+                    medicamentoOriginal.Stock_actual -= ventaOriginal.Cantidad_vendida;
+                    await _repositorioMedicamentos.ActualizarMedicamentoAsync(medicamentoOriginal);
+                }
+                return;
+            }
+
+            // Aplicar nueva venta
+            medicamentoNuevo.Stock_actual -= ventaNueva.Cantidad_vendida;
+            ventaNueva.Total_venta = medicamentoNuevo.Precio_unitario * ventaNueva.Cantidad_vendida;
+
+            await JSRuntime.InvokeVoidAsync("console.log", $"Nuevo stock de {medicamentoNuevo.Nombre}: {medicamentoNuevo.Stock_actual}");
+            await JSRuntime.InvokeVoidAsync("console.log", $"Nuevo total de venta: {ventaNueva.Total_venta}");
+
+            // PASO 3: Guardar cambios
+            await _repositorioMedicamentos.ActualizarMedicamentoAsync(medicamentoNuevo);
+            await _repositorioVentas.ActualizarVentaAsync(ventaNueva);
+
+            // Actualizar la variable del formulario con los nuevos valores
+            _ventaActual = ventaNueva;
+
+            await JSRuntime.InvokeVoidAsync("alert", "¡Venta actualizada correctamente!");
+            _mostrarModal = false;
+            await CargarDatos();
+
+            await JSRuntime.InvokeVoidAsync("console.log", "=== EDICIÓN COMPLETADA EXITOSAMENTE ===");
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"ERROR: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error al editar venta: {ex.Message}");
+        }
+    }
+
+    private async Task EliminarVenta(int id)
+    {
+        if (await JSRuntime.InvokeAsync<bool>("confirm", "¿Está seguro de eliminar esta venta?"))
+        {
+            var venta = await _repositorioVentas.ObtenerVentaPorIdAsync(id);
+            if (venta != null)
+            {
+                var medicamento = _medicamentos.FirstOrDefault(m => m.ID_Medicamento == venta.ID_Medicamento);
+                if (medicamento != null)
+                {
+                    // Devolver la cantidad al stock
+                    medicamento.Stock_actual += venta.Cantidad_vendida;
+                    await _repositorioMedicamentos.ActualizarMedicamentoAsync(medicamento);
+                }
+
+                await _repositorioVentas.EliminarVentaAsync(id);
+                await CargarDatos();
+            }
+        }
+    }
+
+    private async Task ActualizarTotal(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int cantidad))
+        {
+            _ventaActual.Cantidad_vendida = cantidad;
+            CalcularTotal();
+        }
+    }
+
+    private async Task OnMedicamentoSeleccionado(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int idMedicamento))
+        {
+            _ventaActual.ID_Medicamento = idMedicamento;
+            CalcularTotal();
+        }
+    }
+
+    private void CalcularTotal()
+    {
+        var medicamento = _medicamentos.FirstOrDefault(m => m.ID_Medicamento == _ventaActual.ID_Medicamento);
+        if (medicamento != null && _ventaActual.Cantidad_vendida > 0)
+        {
+            _ventaActual.Total_venta = medicamento.Precio_unitario * _ventaActual.Cantidad_vendida;
+        }
+        else
+        {
+            _ventaActual.Total_venta = 0;
+        }
+    }
+}

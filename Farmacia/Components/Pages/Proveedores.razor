@@ -1,0 +1,158 @@
+﻿@page "/proveedores"
+@rendermode InteractiveServer
+@inject IProveedorRepositorio _repositorioProveedores
+@inject NavigationManager NavigationManager
+@inject IMedicamentoRepositorio _repositorioMedicamentos
+
+<h3>Lista de Proveedores</h3>
+
+@if (!string.IsNullOrEmpty(mensajeError))
+{
+    <div class="alert alert-danger">@mensajeError</div>
+}
+
+<button class="btn btn-primary mb-3" @onclick="MostrarFormulario">Agregar Nuevo Proveedor</button>
+
+@if (mostrarFormulario)
+{
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>@(proveedorActual.ID_Proveedor == 0 ? "Agregar" : "Editar") Proveedor</h5>
+        </div>
+        <div class="card-body">
+            <EditForm Model="@proveedorActual" OnValidSubmit="@GuardarProveedor">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                <div class="form-group mb-3">
+                    <label>Nombre de la Empresa:</label>
+                    <InputText class="form-control" @bind-Value="proveedorActual.Nombre_empresa" />
+                    <ValidationMessage For="@(() => proveedorActual.Nombre_empresa)" />
+                </div>
+
+                <div class="form-group mb-3">
+                    <label>Teléfono:</label>
+                    <InputText class="form-control" @bind-Value="proveedorActual.Telefono" />
+                    <ValidationMessage For="@(() => proveedorActual.Telefono)" />
+                </div>
+
+                <div class="form-group mb-3">
+                    <label>Correo Electrónico:</label>
+                    <InputText class="form-control" @bind-Value="proveedorActual.Correo" />
+                    <ValidationMessage For="@(() => proveedorActual.Correo)" />
+                </div>
+
+                <div class="form-group mb-3">
+                    <label>Dirección:</label>
+                    <InputText class="form-control" @bind-Value="proveedorActual.Direccion" />
+                    <ValidationMessage For="@(() => proveedorActual.Direccion)" />
+                </div>
+
+                <div class="form-group">
+                    <button type="submit" class="btn btn-success">Guardar</button>
+                    <button type="button" class="btn btn-secondary ms-2" @onclick="Cancelar">Cancelar</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@if (proveedores == null)
+{
+    <p>Cargando...</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Empresa</th>
+                <th>Teléfono</th>
+                <th>Correo</th>
+                <th>Dirección</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var proveedor in proveedores)
+            {
+                <tr>
+                    <td>@proveedor.ID_Proveedor</td>
+                    <td>@proveedor.Nombre_empresa</td>
+                    <td>@proveedor.Telefono</td>
+                    <td>@proveedor.Correo</td>
+                    <td>@proveedor.Direccion</td>
+                    <td>
+                        <button class="btn btn-sm btn-info" @onclick="() => EditarProveedor(proveedor.ID_Proveedor)">Editar</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => EliminarProveedor(proveedor.ID_Proveedor)">Eliminar</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<Proveedor> proveedores;
+    private Proveedor proveedorActual = new Proveedor();
+    private bool mostrarFormulario = false;
+    private string? mensajeError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarProveedores();
+    }
+
+    private async Task CargarProveedores()
+    {
+        proveedores = await _repositorioProveedores.ObtenerProveedoresAsync();
+    }
+
+    private void MostrarFormulario()
+    {
+        proveedorActual = new Proveedor();
+        mostrarFormulario = true;
+    }
+
+    private async Task EditarProveedor(int id)
+    {
+        proveedorActual = await _repositorioProveedores.ObtenerProveedorPorIdAsync(id);
+        mostrarFormulario = true;
+    }
+
+    private async Task EliminarProveedor(int id)
+    {
+        // Verifica si hay medicamentos asociados a este proveedor
+        var medicamentosAsociados = await _repositorioMedicamentos.ObtenerMedicamentosAsync();
+        if (medicamentosAsociados.Any(m => m.ID_Proveedor == id))
+        {
+            mensajeError = "No se puede eliminar el proveedor porque tiene medicamentos asociados. Elimine primero esos medicamentos.";
+            return;
+        }
+
+        await _repositorioProveedores.EliminarProveedorAsync(id);
+        await CargarProveedores();
+        mensajeError = null;
+    }
+
+    private async Task GuardarProveedor()
+    {
+        if (proveedorActual.ID_Proveedor == 0)
+        {
+            await _repositorioProveedores.AgregarProveedorAsync(proveedorActual);
+        }
+        else
+        {
+            await _repositorioProveedores.ActualizarProveedorAsync(proveedorActual);
+        }
+
+        mostrarFormulario = false;
+        await CargarProveedores();
+    }
+
+    private void Cancelar()
+    {
+        mostrarFormulario = false;
+    }
+}

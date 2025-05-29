@@ -1,0 +1,184 @@
+﻿@page "/medicamentos"
+@rendermode InteractiveServer
+@inject IMedicamentoRepositorio _repositoriomedicamentos
+@inject IProveedorRepositorio _repositorioProveedores
+@inject IVentaRepositorio _repositorioVentas
+@inject NavigationManager NavigationManager
+
+<h3>Lista de Medicamentos</h3>
+
+@if (!string.IsNullOrEmpty(mensajeError))
+{
+    <div class="alert alert-danger">@mensajeError</div>
+}
+
+<button class="btn btn-primary mb-3" @onclick="MostrarFormulario">Agregar Nuevo Medicamento</button>
+
+@if (mostrarFormulario)
+{
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>@(medicamentoActual.ID_Medicamento == 0 ? "Agregar" : "Editar") Medicamento</h5>
+        </div>
+        <div class="card-body">
+            <EditForm Model="@medicamentoActual" OnValidSubmit="@GuardarMedicamento">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                <div class="form-group mb-3">
+                    <label>Nombre:</label>
+                    <InputText class="form-control" @bind-Value="medicamentoActual.Nombre" />
+                    <ValidationMessage For="@(() => medicamentoActual.Nombre)" />
+                </div>
+
+                <div class="form-group mb-3">
+                    <label>Descripción:</label>
+                    <InputTextArea class="form-control" @bind-Value="medicamentoActual.Descripcion" />
+                </div>
+
+                <div class="form-group mb-3">
+                    <label>Precio Unitario:</label>
+                    <InputNumber class="form-control" @bind-Value="medicamentoActual.Precio_unitario" />
+                    <ValidationMessage For="@(() => medicamentoActual.Precio_unitario)" />
+                </div>
+
+                <div class="form-group mb-3">
+                    <label>Stock Actual:</label>
+                    <InputNumber class="form-control" @bind-Value="medicamentoActual.Stock_actual" />
+                    <ValidationMessage For="@(() => medicamentoActual.Stock_actual)" />
+                </div>
+
+                <div class="form-group mb-3">
+                    <label>Fecha Vencimiento:</label>
+                    <InputDate class="form-control" @bind-Value="medicamentoActual.Fecha_vencimiento" />
+                    <ValidationMessage For="@(() => medicamentoActual.Fecha_vencimiento)" />
+                </div>
+
+                <div class="form-group mb-3">
+                    <label>Proveedor:</label>
+                    <InputSelect class="form-control" @bind-Value="medicamentoActual.ID_Proveedor">
+                        <option value="">Seleccione un proveedor</option>
+                        @foreach (var proveedor in _proveedores)
+                        {
+                            <option value="@proveedor.ID_Proveedor">@proveedor.Nombre_empresa</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="@(() => medicamentoActual.ID_Proveedor)" />
+                </div>
+
+                <div class="form-group">
+                    <button type="submit" class="btn btn-success">Guardar</button>
+                    <button type="button" class="btn btn-secondary ms-2" @onclick="Cancelar">Cancelar</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@if (_medicamentos == null)
+{
+    <p>Cargando...</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Nombre</th>
+                <th>Descripción</th>
+                <th>Precio</th>
+                <th>Stock</th>
+                <th>Vencimiento</th>
+                <th>Proveedor</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var medicamento in _medicamentos)
+            {
+                var proveedor = _proveedores?.FirstOrDefault(p => p.ID_Proveedor == medicamento.ID_Proveedor);
+                <tr>
+                    <td>@medicamento.ID_Medicamento</td>
+                    <td>@medicamento.Nombre</td>
+                    <td>@medicamento.Descripcion</td>
+                    <td>@medicamento.Precio_unitario.ToString("C")</td>
+                    <td>@medicamento.Stock_actual</td>
+                    <td>@medicamento.Fecha_vencimiento.ToShortDateString()</td>
+                    <td>@(proveedor?.Nombre_empresa ?? "N/A")</td>
+                    <td>
+                        <button class="btn btn-sm btn-info" @onclick="() => EditarMedicamento(medicamento.ID_Medicamento)">Editar</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => EliminarMedicamento(medicamento)">Eliminar</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<Medicamento>? _medicamentos;
+    private List<Proveedor>? _proveedores;
+    private Medicamento medicamentoActual = new Medicamento();
+    private bool mostrarFormulario = false;
+    private string? mensajeError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarDatos();
+    }
+
+    private async Task CargarDatos()
+    {
+        _medicamentos = await _repositoriomedicamentos.ObtenerMedicamentosAsync();
+        _proveedores = await _repositorioProveedores.ObtenerProveedoresAsync();
+    }
+
+    private void MostrarFormulario()
+    {
+        medicamentoActual = new Medicamento();
+        mostrarFormulario = true;
+    }
+
+    private async Task EditarMedicamento(int id)
+    {
+        medicamentoActual = await _repositoriomedicamentos.ObtenerMedicamentoPorIdAsync(id) ?? new Medicamento();
+        mostrarFormulario = true;
+    }
+
+    private async Task EliminarMedicamento(Medicamento medicamento)
+    {
+        // Verifica si hay ventas asociadas a este medicamento
+        var ventas = await _repositorioVentas.ObtenerVentasAsync();
+        if (ventas.Any(v => v.ID_Medicamento == medicamento.ID_Medicamento))
+        {
+            mensajeError = "No se puede eliminar el medicamento porque existen ventas asociadas. Elimine primero esas ventas.";
+            return;
+        }
+
+        await _repositoriomedicamentos.EliminarMedicamentoAsync(medicamento.ID_Medicamento);
+        _medicamentos = await _repositoriomedicamentos.ObtenerMedicamentosAsync();
+        await CargarDatos();
+        mensajeError = null;
+    }
+
+    private async Task GuardarMedicamento()
+    {
+        if (medicamentoActual.ID_Medicamento == 0)
+        {
+            await _repositoriomedicamentos.AgregarMedicamentoAsync(medicamentoActual);
+        }
+        else
+        {
+            await _repositoriomedicamentos.ActualizarMedicamentoAsync(medicamentoActual);
+        }
+
+        mostrarFormulario = false;
+        await CargarDatos();
+    }
+
+    private void Cancelar()
+    {
+        mostrarFormulario = false;
+    }
+}
