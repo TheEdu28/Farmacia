@@ -1,0 +1,60 @@
+﻿@page "/reabastecimiento"
+@rendermode InteractiveServer
+@inject IMedicamentoRepositorio _repositorioMedicamentos
+@inject IProveedorRepositorio _repositorioProveedores
+
+<h3>Lista de Medicamentos a Pedir a Proveedores</h3>
+
+@if (_medicamentos == null || _proveedores == null)
+{
+    <p>Cargando datos...</p>
+}
+else
+{
+    var medicamentosBajoStock = _medicamentos.Where(m => m.Stock_actual < 10).ToList();
+
+    if (medicamentosBajoStock.Any())
+    {
+        <table class="table table-bordered table-striped">
+            <thead>
+                <tr>
+                    <th>Medicamento</th>
+                    <th>Stock actual</th>
+                    <th>Proveedor</th>
+                    <th>Teléfono</th>
+                    <th>Correo</th>
+                    <th>Dirección</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var med in medicamentosBajoStock)
+                {
+                    var proveedor = _proveedores.FirstOrDefault(p => p.ID_Proveedor == med.ID_Proveedor);
+                    <tr>
+                        <td>@med.Nombre</td>
+                        <td>@med.Stock_actual</td>
+                        <td>@(proveedor?.Nombre_empresa ?? "N/A")</td>
+                        <td>@(proveedor?.Telefono ?? "N/A")</td>
+                        <td>@(proveedor?.Correo ?? "N/A")</td>
+                        <td>@(proveedor?.Direccion ?? "N/A")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    else
+    {
+        <div class="alert alert-success">No hay medicamentos con stock bajo que requieran pedido.</div>
+    }
+}
+
+@code {
+    private List<Medicamento>? _medicamentos;
+    private List<Proveedor>? _proveedores;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _medicamentos = await _repositorioMedicamentos.ObtenerMedicamentosAsync();
+        _proveedores = await _repositorioProveedores.ObtenerProveedoresAsync();
+    }
+}

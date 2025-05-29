@@ -19,6 +19,62 @@
     </div>
 </div>
 
+<!-- RESUMEN DE VENTAS -->
+@if (_resumenVentas != null)
+{
+    <div class="row mb-4">
+        <div class="col">
+            <div class="card text-center">
+                <div class="card-header">Ventas Hoy</div>
+                <div class="card-body">
+                    <h5 class="card-title">@_resumenVentas.VentasDiarias.ToString("C")</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card text-center">
+                <div class="card-header">Ventas Semana</div>
+                <div class="card-body">
+                    <h5 class="card-title">@_resumenVentas.VentasSemanales.ToString("C")</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card text-center">
+                <div class="card-header">Ventas Mes</div>
+                <div class="card-body">
+                    <h5 class="card-title">@_resumenVentas.VentasMensuales.ToString("C")</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- MEDICAMENTOS MÁS VENDIDOS -->
+@if (_masVendidos?.Any() == true)
+{
+    <div class="mb-4">
+        <h5>Medicamentos más vendidos (top 5)</h5>
+        <table class="table table-sm table-success">
+            <thead>
+                <tr>
+                    <th>Medicamento</th>
+                    <th>Cantidad vendida</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in _masVendidos)
+                {
+                    <tr>
+                        <td>@item.Nombre</td>
+                        <td>@item.Cantidad</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
 @if (_ventas == null)
 {
     <p>Cargando ventas...</p>
@@ -145,9 +201,14 @@ else
     private DateTime _fechaInicio = DateTime.Today.AddDays(-7);
     private DateTime _fechaFin = DateTime.Today;
 
+    // NUEVO: Resumen y análisis
+    private ResumenVentas? _resumenVentas;
+    private List<MedicamentoVenta> _masVendidos = new();
+
     protected override async Task OnInitializedAsync()
     {
         await CargarDatos();
+        await CalcularResumenYMasVendidos();
     }
 
     private async Task CargarDatos()
@@ -159,6 +220,7 @@ else
     private async Task AplicarFiltroFecha()
     {
         _ventas = await _repositorioVentas.ObtenerRangoFechaAsync(_fechaInicio, _fechaFin.AddDays(1));
+        await CalcularResumenYMasVendidos();
     }
 
     private async Task LimpiarFiltroFecha()
@@ -166,6 +228,7 @@ else
         _fechaInicio = DateTime.MinValue;
         _fechaFin = DateTime.MaxValue;
         _ventas = await _repositorioVentas.ObtenerVentasAsync();
+        await CalcularResumenYMasVendidos();
     }
 
     private void MostrarModalAgregar()
@@ -414,5 +477,51 @@ else
         {
             _ventaActual.Total_venta = 0;
         }
+    }
+
+    // NUEVO: Cálculo de resumen y medicamentos más vendidos
+    private async Task CalcularResumenYMasVendidos()
+    {
+        var todasLasVentas = await _repositorioVentas.ObtenerVentasAsync();
+
+        // Ventas diarias/semanales/mensuales
+        var hoy = DateTime.Today;
+        var inicioSemana = hoy.AddDays(-(int)hoy.DayOfWeek);
+        var inicioMes = new DateTime(hoy.Year, hoy.Month, 1);
+
+        _resumenVentas = new ResumenVentas
+        {
+            VentasDiarias = todasLasVentas.Where(v => v.Fecha_venta.Date == hoy).Sum(v => v.Total_venta),
+            VentasSemanales = todasLasVentas.Where(v => v.Fecha_venta.Date >= inicioSemana).Sum(v => v.Total_venta),
+            VentasMensuales = todasLasVentas.Where(v => v.Fecha_venta.Date >= inicioMes).Sum(v => v.Total_venta)
+        };
+
+        // Medicamentos más vendidos (top 5)
+        _masVendidos = todasLasVentas
+            .GroupBy(v => v.ID_Medicamento)
+            .Select(g => new MedicamentoVenta
+            {
+                ID_Medicamento = g.Key,
+                Nombre = _medicamentos.FirstOrDefault(m => m.ID_Medicamento == g.Key)?.Nombre ?? "Desconocido",
+                Cantidad = g.Sum(v => v.Cantidad_vendida)
+            })
+            .OrderByDescending(mv => mv.Cantidad)
+            .Take(5)
+            .ToList();
+    }
+
+    // Clases auxiliares para resumen y análisis
+    private class ResumenVentas
+    {
+        public decimal VentasDiarias { get; set; }
+        public decimal VentasSemanales { get; set; }
+        public decimal VentasMensuales { get; set; }
+    }
+
+    private class MedicamentoVenta
+    {
+        public int ID_Medicamento { get; set; }
+        public string Nombre { get; set; } = "";
+        public int Cantidad { get; set; }
     }
 }

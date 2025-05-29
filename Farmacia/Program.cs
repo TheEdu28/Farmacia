@@ -3,6 +3,7 @@ using Farmacia.Data;
 using Farmacia.Repositorio;
 using Microsoft.EntityFrameworkCore;
 
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.

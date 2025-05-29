@@ -1,0 +1,99 @@
+﻿@page "/inventario"
+@rendermode InteractiveServer
+@inject IMedicamentoRepositorio _repositorioMedicamentos
+
+<h3>Inventario</h3>
+
+@if (_medicamentos == null)
+{
+    <p>Cargando inventario...</p>
+}
+else
+{
+    <div class="mb-4">
+        <h5>Medicamentos con stock bajo (- 10 unidades)</h5>
+        @if (_medicamentosBajoStock.Any())
+        {
+            <table class="table table-sm table-warning">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Stock actual</th>
+                        <th>Fecha de vencimiento</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var med in _medicamentosBajoStock)
+                    {
+                        <tr>
+                            <td>@med.Nombre</td>
+                            <td>@med.Stock_actual</td>
+                            <td>@med.Fecha_vencimiento.ToShortDateString()</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <div class="alert alert-success">No hay medicamentos con stock bajo.</div>
+        }
+    </div>
+
+    <div>
+        <h5>Alertas de medicamentos próximos a vencer (dentro de 30 días)</h5>
+        @if (_medicamentosProximosAVencer.Any())
+        {
+            <table class="table table-sm table-danger">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Stock actual</th>
+                        <th>Fecha de vencimiento</th>
+                        <th>Días restantes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var med in _medicamentosProximosAVencer)
+                    {
+                        <tr>
+                            <td>@med.Nombre</td>
+                            <td>@med.Stock_actual</td>
+                            <td>@med.Fecha_vencimiento.ToShortDateString()</td>
+                            <td>@((med.Fecha_vencimiento - DateTime.Today).Days)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <div class="alert alert-success">No hay medicamentos próximos a vencer.</div>
+        }
+    </div>
+}
+
+@code {
+    private List<Medicamento>? _medicamentos;
+    private List<Medicamento> _medicamentosBajoStock = new();
+    private List<Medicamento> _medicamentosProximosAVencer = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _medicamentos = await _repositorioMedicamentos.ObtenerMedicamentosAsync();
+
+        if (_medicamentos != null)
+        {
+            _medicamentosBajoStock = _medicamentos
+                .Where(m => m.Stock_actual < 10)
+                .OrderBy(m => m.Stock_actual)
+                .ToList();
+
+            _medicamentosProximosAVencer = _medicamentos
+                .Where(m => m.Fecha_vencimiento > DateTime.Today &&
+                            m.Fecha_vencimiento <= DateTime.Today.AddDays(30))
+                .OrderBy(m => m.Fecha_vencimiento)
+                .ToList();
+        }
+    }
+}
